@@ -12,6 +12,8 @@ static BOOL CreateTmpDir(){
 		//in my case directory or file
 		//I can't believe Windows won OS competition.
 		//It's api is plainly was designed by retards. If was designed at all.
+		//BEWARE: in order to remove file, ensure, that it doesn't have RO attribute
+		//or DeleteFileW will fail.
 		return ERROR_ALREADY_EXISTS == GetLastError();
 	} else {
 		return TRUE;
