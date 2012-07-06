@@ -1,9 +1,229 @@
 #define UNICODE
-#define SUCCESS 0
 
 #include <windows.h>
+#include <shellapi.h>
+#include <tchar.h>
+#include <strsafe.h>
 
 static USHORT* TempDir = L"c:\\tmp";
+static USHORT* TempDirContent = L"c:\\tmp\\*\0";
+#define SVCNAME TEXT("tmpfs")
+/* SERVICE STUFF */
+
+SERVICE_STATUS          gSvcStatus; 
+SERVICE_STATUS_HANDLE   gSvcStatusHandle; 
+HANDLE                  ghSvcStopEvent = NULL;
+
+//
+// Purpose: 
+//   Entry point for the service
+//
+// Parameters:
+//   dwArgc - Number of arguments in the lpszArgv array
+//   lpszArgv - Array of strings. The first string is the name of
+//     the service and subsequent strings are passed by the process
+//     that called the StartService function to start the service.
+// 
+// Return value:
+//   None.
+//
+VOID WINAPI SvcMain( DWORD dwArgc, LPTSTR *lpszArgv )
+{
+    // Register the handler function for the service
+
+    gSvcStatusHandle = RegisterServiceCtrlHandler( 
+        SVCNAME, 
+        SvcCtrlHandler);
+
+    if( !gSvcStatusHandle )
+    { 
+        SvcReportEvent(TEXT("RegisterServiceCtrlHandler")); 
+        return; 
+    } 
+
+    // These SERVICE_STATUS members remain as set here
+
+    gSvcStatus.dwServiceType = SERVICE_WIN32_OWN_PROCESS; 
+    gSvcStatus.dwServiceSpecificExitCode = 0;    
+
+    // Report initial status to the SCM
+
+    ReportSvcStatus( SERVICE_START_PENDING, NO_ERROR, 3000 );
+
+    // Perform service-specific initialization and work.
+
+    SvcInit( dwArgc, lpszArgv );
+}
+
+//
+// Purpose: 
+//   The service code
+//
+// Parameters:
+//   dwArgc - Number of arguments in the lpszArgv array
+//   lpszArgv - Array of strings. The first string is the name of
+//     the service and subsequent strings are passed by the process
+//     that called the StartService function to start the service.
+// 
+// Return value:
+//   None
+//
+VOID SvcInit( DWORD dwArgc, LPTSTR *lpszArgv)
+{
+    // TO_DO: Declare and set any required variables.
+    //   Be sure to periodically call ReportSvcStatus() with 
+    //   SERVICE_START_PENDING. If initialization fails, call
+    //   ReportSvcStatus with SERVICE_STOPPED.
+
+    // Create an event. The control handler function, SvcCtrlHandler,
+    // signals this event when it receives the stop control code.
+
+    ghSvcStopEvent = CreateEvent(
+                         NULL,    // default security attributes
+                         TRUE,    // manual reset event
+                         FALSE,   // not signaled
+                         NULL);   // no name
+
+    if ( ghSvcStopEvent == NULL)
+    {
+        ReportSvcStatus( SERVICE_STOPPED, NO_ERROR, 0 );
+        return;
+    }
+
+    // Report running status when initialization is complete.
+
+    ReportSvcStatus( SERVICE_RUNNING, NO_ERROR, 0 );
+
+    // TO_DO: Perform work until service stops.
+
+    while(1)
+    {
+        // Check whether to stop the service.
+
+        WaitForSingleObject(ghSvcStopEvent, INFINITE);
+
+        ReportSvcStatus( SERVICE_STOPPED, NO_ERROR, 0 );
+        return;
+    }
+}
+
+//
+// Purpose: 
+//   Sets the current service status and reports it to the SCM.
+//
+// Parameters:
+//   dwCurrentState - The current state (see SERVICE_STATUS)
+//   dwWin32ExitCode - The system error code
+//   dwWaitHint - Estimated time for pending operation, 
+//     in milliseconds
+// 
+// Return value:
+//   None
+//
+VOID ReportSvcStatus( DWORD dwCurrentState,
+                      DWORD dwWin32ExitCode,
+                      DWORD dwWaitHint)
+{
+    static DWORD dwCheckPoint = 1;
+
+    // Fill in the SERVICE_STATUS structure.
+
+    gSvcStatus.dwCurrentState = dwCurrentState;
+    gSvcStatus.dwWin32ExitCode = dwWin32ExitCode;
+    gSvcStatus.dwWaitHint = dwWaitHint;
+
+    if (dwCurrentState == SERVICE_START_PENDING)
+        gSvcStatus.dwControlsAccepted = 0;
+    else gSvcStatus.dwControlsAccepted = SERVICE_ACCEPT_STOP;
+
+    if ( (dwCurrentState == SERVICE_RUNNING) ||
+           (dwCurrentState == SERVICE_STOPPED) )
+        gSvcStatus.dwCheckPoint = 0;
+    else gSvcStatus.dwCheckPoint = dwCheckPoint++;
+
+    // Report the status of the service to the SCM.
+    SetServiceStatus( gSvcStatusHandle, &gSvcStatus );
+}
+
+//
+// Purpose: 
+//   Called by SCM whenever a control code is sent to the service
+//   using the ControlService function.
+//
+// Parameters:
+//   dwCtrl - control code
+// 
+// Return value:
+//   None
+//
+VOID WINAPI SvcCtrlHandler( DWORD dwCtrl )
+{
+   // Handle the requested control code. 
+
+   switch(dwCtrl) 
+   {  
+      case SERVICE_CONTROL_STOP: 
+         ReportSvcStatus(SERVICE_STOP_PENDING, NO_ERROR, 0);
+
+         // Signal the service to stop.
+
+         SetEvent(ghSvcStopEvent);
+         ReportSvcStatus(gSvcStatus.dwCurrentState, NO_ERROR, 0);
+         
+         return;
+ 
+      case SERVICE_CONTROL_INTERROGATE: 
+         break; 
+ 
+      default: 
+         break;
+   } 
+   
+}
+
+//
+// Purpose: 
+//   Logs messages to the event log
+//
+// Parameters:
+//   szFunction - name of function that failed
+// 
+// Return value:
+//   None
+//
+// Remarks:
+//   The service must have an entry in the Application event log.
+//
+VOID SvcReportEvent(LPTSTR szFunction) 
+{ 
+    HANDLE hEventSource;
+    LPCTSTR lpszStrings[2];
+    TCHAR Buffer[80];
+
+    hEventSource = RegisterEventSource(NULL, SVCNAME);
+
+    if( NULL != hEventSource )
+    {
+        StringCchPrintf(Buffer, 80, TEXT("%s failed with %d"), szFunction, GetLastError());
+
+        lpszStrings[0] = SVCNAME;
+        lpszStrings[1] = Buffer;
+
+        ReportEvent(hEventSource,        // event log handle
+                    EVENTLOG_ERROR_TYPE, // event type
+                    0,                   // event category
+                    SVC_ERROR,           // event identifier
+                    NULL,                // no security identifier
+                    2,                   // size of lpszStrings array
+                    0,                   // no binary data
+                    lpszStrings,         // array of strings
+                    NULL);               // no binary data
+
+        DeregisterEventSource(hEventSource);
+    }
+}
+
+
 
 static void WriteString(USHORT* string){
 	DWORD dummy;
@@ -11,87 +231,111 @@ static void WriteString(USHORT* string){
 	WriteConsoleW(stdout, string, lstrlenW(string), &dummy, NULL);
 }
 
-static void DisplayLastError(){
-			DWORD error = GetLastError();
-		// Retrieve the system error message for the last-error code
 
-    LPVOID lpMsgBuf;
-
-
-    FormatMessageW(
-        FORMAT_MESSAGE_ALLOCATE_BUFFER | 
-        FORMAT_MESSAGE_FROM_SYSTEM |
-        FORMAT_MESSAGE_IGNORE_INSERTS,
-        NULL,
-        error,
-        MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
-        (LPTSTR) &lpMsgBuf,
-        0, NULL );
-
-    WriteString(lpMsgBuf);
-
-    LocalFree(lpMsgBuf);
+static void CreateTmpFolder(){
+	DeleteFileW(TempDir);
+	CreateDirectoryW(TempDir, NULL);
 }
 
-/*
-	Returns TRUE if file doesn't exists anymore
-	Returns FALSE if file still exists.
-*/
-static BOOL ReallyRemoveFileW(USHORT* file){
-	SetLastError(0);
-	
-	BOOL result = SetFileAttributesW(file, FILE_ATTRIBUTE_NORMAL);
-	DisplayLastError();
-	WriteString(result? L"Setting attributes succeeded\n" : L"Setting attributes failed\n");
 
-	
-	result = DeleteFileW(file);
-	DisplayLastError();
-	WriteString(result? L"Deleting file succeeded\n" : L"Deleting file failed\n");
+static void DeleteTmpFolder(){
+	DeleteFileW(TempDirContent);
 
-	return FALSE;
+	SHFILEOPSTRUCT op = {0};
+	op.hwnd = NULL;
+	op.wFunc = FO_DELETE;
+	op.pFrom = TempDirContent;
+	op.pTo = NULL;
+	op.fFlags =  FOF_SILENT | FOF_NOCONFIRMATION | FOF_NOERRORUI | FOF_NOCONFIRMMKDIR;
+	SHFileOperationW (&op);
 }
 
-static BOOL CreateTmpDir(){
-	BOOL result = CreateDirectoryW(TempDir, NULL);
-	if (!result){
-		//ERROR_ALREADY_EXISTS will be returned if *anything* with such name already exists
-		//in my case directory or file
-		//I can't believe Windows won OS competition.
-		//It's api is plainly was designed by retards. If was designed at all.
-		//BEWARE: in order to remove file, ensure, that it doesn't have RO attribute
-		//or DeleteFileW will fail.
-		return ERROR_ALREADY_EXISTS == GetLastError();
-	} else {
-		return TRUE;
-	}
+//
+// Purpose: 
+//   Installs a service in the SCM database
+//
+// Parameters:
+//   None
+// 
+// Return value:
+//   None
+//
+VOID SvcInstall()
+{
+    SC_HANDLE schSCManager;
+    SC_HANDLE schService;
+    TCHAR szPath[MAX_PATH];
 
-	return FALSE;
+    if( !GetModuleFileName( NULL, szPath, MAX_PATH ) )
+    {
+        printf("Cannot install service (%d)\n", GetLastError());
+        return;
+    }
+
+    // Get a handle to the SCM database. 
+ 
+    schSCManager = OpenSCManager( 
+        NULL,                    // local computer
+        NULL,                    // ServicesActive database 
+        SC_MANAGER_ALL_ACCESS);  // full access rights 
+ 
+    if (NULL == schSCManager) 
+    {
+        printf("OpenSCManager failed (%d)\n", GetLastError());
+        return;
+    }
+
+    // Create the service
+
+    schService = CreateService( 
+        schSCManager,              // SCM database 
+        SVCNAME,                   // name of service 
+        SVCNAME,                   // service name to display 
+        SERVICE_ALL_ACCESS,        // desired access 
+        SERVICE_WIN32_OWN_PROCESS, // service type 
+        SERVICE_DEMAND_START,      // start type 
+        SERVICE_ERROR_NORMAL,      // error control type 
+        szPath,                    // path to service's binary 
+        NULL,                      // no load ordering group 
+        NULL,                      // no tag identifier 
+        NULL,                      // no dependencies 
+        NULL,                      // LocalSystem account 
+        NULL);                     // no password 
+ 
+    if (schService == NULL) 
+    {
+        printf("CreateService failed (%d)\n", GetLastError()); 
+        CloseServiceHandle(schSCManager);
+        return;
+    }
+    else printf("Service installed successfully\n"); 
+
+    CloseServiceHandle(schService); 
+    CloseServiceHandle(schSCManager);
 }
-
-static BOOL RemoveTmpDir(){
-	// unfortunately, RemoveDirectoryW can't remove non-empty directories :(
-	return DeleteFileW(TempDir);
-	//return FALSE;
-}
-
 
 void Main(){
+	 // If command-line parameter is "install", install the service. 
+    // Otherwise, the service is probably being started by the SCM.
 
-	WriteString(L"Removing file...");
-	if (ReallyRemoveFileW(TempDir)){
-		WriteString(L"Success\n");
-	} else {
-		WriteString(L"Failed");
-	}
-ExitProcess(SUCCESS);
-return;
-	BOOL succeeded = CreateTmpDir();
-	if (succeeded){
-		WriteString(L"Creation succeeded\n");
-		if (RemoveTmpDir()){
-			WriteString(L"Removing succeeded\n");
-		}
-	}
-	
+    if( lstrcmpi( argv[1], TEXT("install")) == 0 )
+    {
+        SvcInstall();
+        return;
+    }
+
+    // TO_DO: Add any additional services for the process to this table.
+    SERVICE_TABLE_ENTRY DispatchTable[] = 
+    { 
+        { SVCNAME, (LPSERVICE_MAIN_FUNCTION) SvcMain }, 
+        { NULL, NULL } 
+    }; 
+ 
+    // This call returns when the service has stopped. 
+    // The process should simply terminate when the call returns.
+
+    if (!StartServiceCtrlDispatcher( DispatchTable )) 
+    { 
+        SvcReportEvent(TEXT("StartServiceCtrlDispatcher")); 
+    } 
 }
