@@ -39,13 +39,16 @@ static void DisplayLastError(){
 */
 static BOOL ReallyRemoveFileW(USHORT* file){
 	SetLastError(0);
-	SetFileAttributesW(file, FILE_ATTRIBUTE_HIDDEN);
-	DisplayLastError();
-
-	SetLastError(0);
-	DeleteFileW(file);
-	DisplayLastError();
 	
+	BOOL result = SetFileAttributesW(file, FILE_ATTRIBUTE_NORMAL);
+	DisplayLastError();
+	WriteString(result? L"Setting attributes succeeded\n" : L"Setting attributes failed\n");
+
+	
+	result = DeleteFileW(file);
+	DisplayLastError();
+	WriteString(result? L"Deleting file succeeded\n" : L"Deleting file failed\n");
+
 	return FALSE;
 }
 
