@@ -1,15 +1,15 @@
-## What Is It?
+## What is it?
 
 Simple Windows Service, that will clean c:\tmp folder upon system shutdown and startup. Like /tmp on Mac OS X and Linux systems.
 
-## How To Use?
+## How to use?
 
 1. Put executable ('tmpsrv.exe') somewhere (for example in 'c:\tools\').
 2. Start Windows console (cmd.exe) as Administrator and navigate to directory with executable.
 3. To install service type tmpsrv.exe install.
 4. To uninstall service type tmpsrv.exe uninstall.
 
-## How To Build?
+## How to build?
 
 This is a bit complicated:
 
