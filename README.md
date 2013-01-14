@@ -18,7 +18,7 @@ This is a bit complicated:
 3. If you installed MinGW not into C:\MinGW, you will need update build.bat accordingly: replace -L"c:\MinGW\lib" with path to lib within your custom MinGW installation.
 4. Run build.cmd.
 
-Also, you might try VisualC++, but you most likely will need update code a little, since it doesn't support (at the time of the writing) C99.
+Also, you might try VisualC++, but you most likely will need update code a little, since VC++ doesn't support (at the time of the writing) C99.
 
 ## Are there prebuild binaries?
 Yes (32bit but it works just fine on my 64bit Windows8): https://dl.dropbox.com/u/2858326/software/tmpsrv/tmpsrv.exe
