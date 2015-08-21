@@ -1,32 +1,23 @@
-//Good article about Windows Services: http://www.devx.com/cplus/Article/9857
 #define UNICODE
 
 #include <windows.h>
 #include <shellapi.h>
 #include <tchar.h>
+#include <stdbool.h>
 
 static USHORT* TempDir = L"c:\\tmp";
 static USHORT* TempDirContent = L"c:\\tmp\\*\0";
+static USHORT* SVCNAME = L"tmpsrv";
 
-#define SVCNAME L"tmpsrv"
 #define ServiceDescripton L"Deletes content of c:\\tmp directory upon system shutdown and service start."
 
 /* UTILITIES */
-
-static void WriteString(USHORT* string){
-    DWORD dummy;
-    HANDLE stdout = GetStdHandle(STD_OUTPUT_HANDLE);
-    WriteConsoleW(stdout, string, lstrlenW(string), &dummy, NULL);
-}
-
 static void CreateTmpFolder(){
     DeleteFileW(TempDir);
     CreateDirectoryW(TempDir, NULL);
 }
 
 static void DeleteTmpFolder(){
-    DeleteFileW(TempDirContent);
-
     SHFILEOPSTRUCT op = {0};
     op.hwnd = NULL;
     op.wFunc = FO_DELETE;
@@ -34,6 +25,8 @@ static void DeleteTmpFolder(){
     op.pTo = NULL;
     op.fFlags =  FOF_SILENT | FOF_NOCONFIRMATION | FOF_NOERRORUI | FOF_NOCONFIRMMKDIR;
     SHFileOperationW (&op);
+
+    DeleteFileW(TempDir);
 }
 
 static void CleanTmp(){
@@ -108,11 +101,9 @@ static void WINAPI SvcCtrlHandler (DWORD dwCtrl){
 // Called By ServiceDispatcher of SCM
 static void WINAPI SvcMain (DWORD dwArgc, LPTSTR *lpszArgv){
     // Tell Service Dispatcher, that SvcCtrlHandler will handle request from SCM
-
     gSvcStatusHandle = RegisterServiceCtrlHandler (SVCNAME, SvcCtrlHandler);
 
     if (!gSvcStatusHandle){ 
-        WriteString(L"Failed to register SCM Control Handler\nMaybe you running me not under Administrator account?\n");
         return; 
     } 
 
@@ -153,105 +144,6 @@ static SC_HANDLE OpenSCM(){
         SC_MANAGER_ALL_ACCESS);  // full access rights 
 }
 
-static void __stdcall SvcStopAndDelete(){
-    SC_HANDLE schSCManager = OpenSCM();
-
-    if (NULL == schSCManager) 
-    {
-        WriteString(L"OpenSCManager failed. Please, check, that you are running this under Administrator account.\n");
-        return;
-    }
-
-    SC_HANDLE schService = OpenService (schSCManager, SVCNAME, SERVICE_STOP | DELETE);
- 
-    if (schService == NULL)
-    { 
-        WriteString(L"OpenService failed. Please, check, that you are running this under Administrator account.\n"); 
-        CloseServiceHandle(schSCManager);
-        return;
-    }
-
-    // Stop the service
-    SERVICE_STATUS dummy;
-    if (!ControlService (schService, SERVICE_CONTROL_STOP, &dummy)){
-        WriteString(L"Failed to stop the service.\n");
-    } else {
-        WriteString(L"Service stopped.\n");
-    }
-
-    // Delete the service.
-    if (!DeleteService(schService)){
-        WriteString(L"DeleteService failed\n"); 
-    }else{
-        WriteString(L"Service deleted successfully\n"); 
-    }
-    CloseServiceHandle(schService); 
-    CloseServiceHandle(schSCManager);
-}
-
-//   Installs a service in the SCM database
-static void SvcInstallAndStart(){
-    TCHAR szPath[MAX_PATH + 1];
-    if (!GetModuleFileNameW (NULL, szPath, MAX_PATH)){
-        WriteString(L"Failed to get name of the executable\n");
-        return;
-    }
-
-    SC_HANDLE schSCManager = OpenSCM();
-    if (NULL == schSCManager){
-        WriteString(L"OpenSCManager failed\n");
-        return;
-    }
-
-    SC_HANDLE schService = CreateService( 
-        schSCManager,              // SCM database 
-        SVCNAME,                   // name of service 
-        SVCNAME,                   // service name to display 
-        SERVICE_ALL_ACCESS,        // desired access 
-        SERVICE_WIN32_OWN_PROCESS, // service type 
-        SERVICE_AUTO_START,      // Autostart with OS
-        SERVICE_ERROR_NORMAL,      // error control type 
-        szPath,                    // path to service's binary 
-        NULL,                      // no load ordering group 
-        NULL,                      // no tag identifier 
-        NULL,                      // no dependencies 
-        NULL,                      // LocalSystem account 
-        NULL);                     // no password 
- 
-    if (schService == NULL){
-        WriteString(L"CreateService failed.\n"); 
-        CloseServiceHandle(schSCManager);
-        return;
-    }
-    else {
-        // Set the description
-        SERVICE_DESCRIPTION sd;
-
-        sd.lpDescription = ServiceDescripton;
-
-        if( !ChangeServiceConfig2(
-                schService,                 // handle to service
-                SERVICE_CONFIG_DESCRIPTION, // change: description
-                &sd) )                      // new description
-        {
-            WriteString(L"Failed to set proper description for the service.\n");
-        }
-
-        WriteString(L"Service installed successfully\n"); 
-     
-        // Start the service
-
-        if (!StartServiceW(schService, 0, NULL)){
-            WriteString(L"Failed to start the service\n");
-        }else{
-            WriteString(L"Service started\n");
-        }
-    }
-
-    CloseServiceHandle(schService); 
-    CloseServiceHandle(schSCManager);
-}
-
 static void SvcRun(){
     SERVICE_TABLE_ENTRY DispatchTable[] = 
         { 
@@ -264,33 +156,179 @@ static void SvcRun(){
     StartServiceCtrlDispatcher(DispatchTable);
 }
 
-static void RealMain(USHORT* mode){
-    if (NULL == mode){
-        SvcRun();
-    } else if (lstrcmpiW (mode, L"install") == 0){
-        SvcInstallAndStart();
-    } else if (lstrcmpiW (mode, L"uninstall") == 0){
-        SvcStopAndDelete();
-    } else {
-        WriteString(L"Unknown mode. Use 'install' to install the service and 'uninstall' to uninstall it.");
-    }
+static bool ask(USHORT* question){
+    return IDYES == MessageBoxW(NULL, question, SVCNAME, MB_YESNO | MB_ICONQUESTION);
 }
 
-void Main(){ //ENTRY POINT
+static void inform (USHORT* message){
+    MessageBoxW(NULL, message, SVCNAME, MB_OK | MB_ICONINFORMATION);
+}
+
+static void error(USHORT* message){
+    MessageBoxW(NULL, message, SVCNAME, MB_OK | MB_ICONERROR);
+}
+
+static void warn(USHORT* message){
+    MessageBoxW(NULL, message, SVCNAME, MB_OK | MB_ICONWARNING);
+}
+
+static void install_service_and_start(USHORT* processFullPath){
+    SC_HANDLE schSCManager = OpenSCM();
+    if (NULL == schSCManager){
+        error(L"OpenSCManager failed\n");
+        return;
+    }
+
+    USHORT szPath[MAX_PATH + 100];
+    SecureZeroMemory(szPath, sizeof(szPath));
+    
+    wsprintfW(szPath, L"\"%s\" -w", processFullPath);
+
+    SC_HANDLE schService = CreateServiceW( 
+        schSCManager,              // SCM database 
+        SVCNAME,                   // name of service 
+        SVCNAME,                   // service name to display 
+        SERVICE_ALL_ACCESS,        // desired access 
+        SERVICE_WIN32_OWN_PROCESS, // service type 
+        SERVICE_AUTO_START,      // Autostart with OS
+        SERVICE_ERROR_IGNORE,      // error control type 
+        szPath,                    // path to service's binary 
+        NULL,                      // no load ordering group 
+        NULL,                      // no tag identifier 
+        NULL,                      // no dependencies 
+        NULL,                      // LocalSystem account 
+        NULL);                     // no password 
+ 
+    if (schService == NULL){
+        error(L"CreateService failed."); 
+        CloseServiceHandle(schSCManager);
+        return;
+    }
+    else {
+        // Set the description
+        SERVICE_DESCRIPTION sd;
+
+        sd.lpDescription = ServiceDescripton;
+
+        if( !ChangeServiceConfig2(schService, SERVICE_CONFIG_DESCRIPTION, &sd)){
+            warn(L"Failed to set proper description for the service.\n");
+        }
+
+        if (ask(L"Service installed successfully. Would you like to start it right now?")){
+            if (!StartServiceW(schService, 0, NULL)){
+                error(L"Failed to start the service\n");
+            }else{
+                inform(L"Service started\n");
+            }
+        } 
+    }
+
+    CloseServiceHandle(schService); 
+    CloseServiceHandle(schSCManager);
+}
+
+static void stop_service_and_delete(){
+    SC_HANDLE schSCManager = OpenSCM();
+
+    if (NULL == schSCManager) 
+    {
+        error(L"OpenSCManager failed. Please, check, that you are running this under Administrator account.\n");
+        return;
+    }
+
+    SC_HANDLE schService = OpenService (schSCManager, SVCNAME, SERVICE_STOP | DELETE);
+ 
+    if (schService == NULL)
+    { 
+        error(L"OpenService failed. Please, check, that you are running this under Administrator account.\n"); 
+        CloseServiceHandle(schSCManager);
+        return;
+    }
+
+    // Stop the service
+    SERVICE_STATUS dummy;
+    ControlService (schService, SERVICE_CONTROL_STOP, &dummy);
+
+    // Delete the service.
+    if (!DeleteService(schService)){
+        error(L"DeleteService failed\n"); 
+    }else{
+        inform(L"Service stopped and deleted successfully\n"); 
+    }
+    CloseServiceHandle(schService); 
+    CloseServiceHandle(schSCManager);
+}
+
+void entry_point(){ //ENTRY POINT
+    USHORT processFullPath [MAX_PATH + 2];
+    SecureZeroMemory(processFullPath, sizeof(processFullPath));
+    DWORD processFullPathLength = GetModuleFileNameW(NULL, (USHORT*)&processFullPath, MAX_PATH + 1);
+    if (MAX_PATH + 1 == processFullPathLength){
+        error(L"Failed to determine process full path.");
+        return;
+    }
+    
     USHORT* commandLine = GetCommandLineW();
-    LPWSTR *szArglist = NULL;
+    LPWSTR* szArglist = NULL;
     int nArgs = 0;
 
     szArglist = CommandLineToArgvW(commandLine, &nArgs);
-    if( NULL == szArglist )
+    if(NULL == szArglist )
     {
-        WriteString(L"CommandLineToArgvW failed\n");
-        goto exit;
+        error(L"CommandLineToArgvW failed");
+        return;
     }
-    
-    RealMain(nArgs < 2 ? NULL : szArglist[1]);
-    LocalFree(szArglist);
 
-exit:
-    ExitProcess(0);
+    if (nArgs == 1){
+        SC_HANDLE hServiceController = OpenSCManagerW(NULL, NULL, SC_MANAGER_CONNECT);
+        if (hServiceController == NULL){
+            error(L"Failed to open ServiceControlManager. Please run me as administrator.");
+            //goto exit;
+            return;
+        }
+
+        SC_HANDLE hService = OpenServiceW(hServiceController, SVCNAME, SC_MANAGER_CONNECT);
+        if (hService != NULL){
+            //we have service installed
+            if (ask(L"Would you like to uninstall tmpsrv service?")){
+                CloseServiceHandle(hService);
+                CloseServiceHandle(hServiceController);
+
+                ShellExecuteW(NULL, L"runas", processFullPath, L"-u", NULL, SW_SHOWDEFAULT);
+                return;
+            }
+        } else {
+            DWORD lastError = GetLastError();
+            if (lastError == ERROR_SERVICE_DOES_NOT_EXIST){
+                if (ask(L"Would you like to install tmpsrv service?")){
+                    CloseServiceHandle(hServiceController);
+
+                    ShellExecuteW(NULL, L"runas", processFullPath, L"-i", NULL, SW_SHOWDEFAULT);
+                    return;
+                }
+            } else {
+                error(L"Failed to query Service Database");
+                return;
+            }
+        }
+        return;
+    }
+
+    if (nArgs == 2){
+        USHORT* arg = szArglist[1];
+        if (lstrcmpiW(arg, L"-w") == 0){
+            SvcRun();
+        } else if (lstrcmpiW (arg, L"-i") == 0){
+            install_service_and_start(processFullPath);
+        } else if (lstrcmpiW (arg, L"-u") == 0){
+            stop_service_and_delete();
+        } else {
+            error(L"Invalid argument. Use '-i' to install the service and '-u' to uninstall it.");
+        }
+        return;
+    }
+
+    error(L"Too many arguments!");
+    
+    LocalFree(szArglist);
 }
