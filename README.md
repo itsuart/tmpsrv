@@ -17,7 +17,7 @@ This is a bit complicated:
 
 Also, you might try VisualC++, but you will most likely need to update the code a little, since VC++ doesn't support (at the time of the writing) C99.
 
-## Are there prebuild binaries?
+## Are there pre-built binaries?
 Yes. 
 
 32bit: https://dl.dropboxusercontent.com/u/2858326/software/tmpsrv/tmpsrv32.exe
