@@ -5,23 +5,24 @@ Simple Windows Service, that will clean c:\tmp folder upon system shutdown and s
 ## How to use?
 
 1. Put executable ('tmpsrv.exe') somewhere (for example in 'c:\tools\').
-2. Start Windows console (cmd.exe) as Administrator and navigate to directory with executable.
-3. To install service type tmpsrv.exe install.
-4. To uninstall service type tmpsrv.exe uninstall.
+2. Start it (doubleclick) to install or uninstall the service.
 
 ## How to build?
 
 This is a bit complicated:
 
-1. Go to http://www.mingw.org/, download and install MinGW.
+1. Go to http://mingw-w64.org/ , download and install MinGW.
 2. Navigate to the directory where you put sources of the service.
-3. If you installed MinGW not into C:\MinGW, you will need update build.bat accordingly: replace -L"c:\MinGW\lib" with path to lib within your custom MinGW installation.
-4. Run build.cmd.
+3. Run build32.cmd or build64.cmd to build 32 and 64 bit executables respectfully (you wil need MinGW distribution of proper bitness).
 
-Also, you might try VisualC++, but you most likely will need update code a little, since VC++ doesn't support (at the time of the writing) C99.
+Also, you might try VisualC++, but you will most likely need to update the code a little, since VC++ doesn't support (at the time of the writing) C99.
 
 ## Are there prebuild binaries?
-Yes (32bit but it works just fine on my 64bit Windows8): https://dl.dropbox.com/u/2858326/software/tmpsrv/tmpsrv.exe
+Yes. 
+
+32bit: https://dl.dropboxusercontent.com/u/2858326/software/tmpsrv/tmpsrv32.exe
+
+64bit: https://dl.dropboxusercontent.com/u/2858326/software/tmpsrv/tmpsrv64.exe
 
 ## License?
 MIT. File LICENSE contains a copy.
