@@ -11,7 +11,6 @@ static USHORT* SVCNAME = L"tmpsrv";
 
 #define ServiceDescripton L"Deletes content of c:\\tmp directory upon system shutdown and service start."
 
-/* UTILITIES */
 static void CreateTmpFolder(){
     DeleteFileW(TempDir);
     CreateDirectoryW(TempDir, NULL);
@@ -37,124 +36,111 @@ static void CleanTmp(){
 
 /* SERVICE STUFF */
 
-SERVICE_STATUS          gSvcStatus; 
-SERVICE_STATUS_HANDLE   gSvcStatusHandle; 
-HANDLE                  ghSvcStopEvent = NULL;
+static SERVICE_STATUS  g_ServiceStatus;
+static SERVICE_STATUS_HANDLE  g_ServiceStatusHandle;
+static HANDLE g_StopEventHandle = NULL;
 
 static void ReportSvcStatus(DWORD dwCurrentState, DWORD dwWin32ExitCode, DWORD dwWaitHint){
     static DWORD dwCheckPoint = 1;
 
-    gSvcStatus.dwCurrentState = dwCurrentState;
-    gSvcStatus.dwWin32ExitCode = dwWin32ExitCode;
-    gSvcStatus.dwWaitHint = dwWaitHint;
+    g_ServiceStatus.dwCurrentState = dwCurrentState;
+    g_ServiceStatus.dwWin32ExitCode = dwWin32ExitCode;
+    g_ServiceStatus.dwWaitHint = dwWaitHint;
 
     if (dwCurrentState == SERVICE_START_PENDING){
-        gSvcStatus.dwControlsAccepted = 0;
+        g_ServiceStatus.dwControlsAccepted = 0;
     } else {
-        gSvcStatus.dwControlsAccepted = SERVICE_ACCEPT_STOP;
+        g_ServiceStatus.dwControlsAccepted = (SERVICE_ACCEPT_STOP | SERVICE_ACCEPT_SHUTDOWN);
     }
 
     if ( (dwCurrentState == SERVICE_RUNNING) ||
          (dwCurrentState == SERVICE_STOPPED) ){
-        gSvcStatus.dwCheckPoint = 0;
+        g_ServiceStatus.dwCheckPoint = 0;
     } else {
-        gSvcStatus.dwCheckPoint = dwCheckPoint++;
+        g_ServiceStatus.dwCheckPoint = dwCheckPoint++;
     }
 
     // Report the status of the service to the SCM.
-    SetServiceStatus( gSvcStatusHandle, &gSvcStatus );
+    SetServiceStatus( g_ServiceStatusHandle, &g_ServiceStatus );
 }
 
-static void DoWork(){
-    CleanTmp();
-
-    //wait for stop signal from SCM
-    WaitForSingleObject(ghSvcStopEvent, INFINITE);
-
-    ReportSvcStatus( SERVICE_STOPPED, NO_ERROR, 0 );
-}
+static bool g_SystemIsShuttingDown = false;
 
 static void WINAPI SvcCtrlHandler (DWORD dwCtrl){
-    // Handle the requested control code. 
+    switch(dwCtrl){
+        case SERVICE_CONTROL_STOP:{
+            ReportSvcStatus(SERVICE_STOP_PENDING, NO_ERROR, 0);
 
-    switch(dwCtrl){  
-    case SERVICE_CONTROL_STOP: 
-        ReportSvcStatus(SERVICE_STOP_PENDING, NO_ERROR, 0);
+            SetEvent(g_StopEventHandle);
 
-        // Signal the service to stop.
-        SetEvent(ghSvcStopEvent);
-        ReportSvcStatus(gSvcStatus.dwCurrentState, NO_ERROR, 0);
-        return;
-    
-    case SERVICE_CONTROL_SHUTDOWN:
-        SetEvent(ghSvcStopEvent);
-        ReportSvcStatus(SERVICE_STOPPED, NO_ERROR, 0);
-        
-        CleanTmp();
-        return;
-        
-    default: 
-        break;
-    } 
+            ReportSvcStatus(g_ServiceStatus.dwCurrentState, NO_ERROR, 0);
+            return;
+        }
+        case SERVICE_CONTROL_SHUTDOWN:{
+
+            g_SystemIsShuttingDown = true;
+
+            ReportSvcStatus(SERVICE_STOPPED, NO_ERROR, 0);
+            return;
+        }
+    }
 }
 
 // Called By ServiceDispatcher of SCM
 static void WINAPI SvcMain (DWORD dwArgc, LPTSTR *lpszArgv){
-    // Tell Service Dispatcher, that SvcCtrlHandler will handle request from SCM
-    gSvcStatusHandle = RegisterServiceCtrlHandler (SVCNAME, SvcCtrlHandler);
+    g_ServiceStatusHandle = RegisterServiceCtrlHandler (SVCNAME, SvcCtrlHandler);
 
-    if (!gSvcStatusHandle){ 
-        return; 
-    } 
+    if (!g_ServiceStatusHandle){
+        return;
+    }
 
-    // These SERVICE_STATUS members remain as set here
-
-    gSvcStatus.dwServiceType = SERVICE_WIN32_OWN_PROCESS; 
-    gSvcStatus.dwServiceSpecificExitCode = 0;    
+    g_ServiceStatus.dwServiceType = SERVICE_WIN32_OWN_PROCESS;
+    g_ServiceStatus.dwServiceSpecificExitCode = 0;
 
     // Report initial status to the SCM
-
     ReportSvcStatus( SERVICE_START_PENDING, NO_ERROR, 3000 );
 
-    // Create event to wait on
-    // The control handler function, SvcCtrlHandler,
-    // signals this event when it receives the stop control code.
+    // Create anonymous event to wait on
+    g_StopEventHandle = CreateEvent( NULL, true, false, NULL);
 
-    ghSvcStopEvent = CreateEvent(
-        NULL,    // default security attributes
-        TRUE,    // manual reset event
-        FALSE,   // not signaled
-        NULL);   // no name
-
-    if (ghSvcStopEvent == NULL){
+    if (g_StopEventHandle == NULL){
+        //failed to create a wait event
         ReportSvcStatus( SERVICE_STOPPED, NO_ERROR, 0 );
-        return; 
+        return;
     }
 
     // Report running status when initialization is complete.
     ReportSvcStatus( SERVICE_RUNNING, NO_ERROR, 0 );
 
-    DoWork();
+    WaitForSingleObject(g_StopEventHandle, INFINITE);
+
+    if (g_SystemIsShuttingDown){
+        CleanTmp();
+    }
+
+    ReportSvcStatus( SERVICE_STOPPED, NO_ERROR, 0 );
 }
 
 static SC_HANDLE OpenSCM(){
-    return OpenSCManager( 
+    return OpenSCManager(
         NULL,                    // local computer
-        NULL,                    // ServicesActive database 
-        SC_MANAGER_ALL_ACCESS);  // full access rights 
+        NULL,                    // ServicesActive database
+        SC_MANAGER_ALL_ACCESS);  // full access rights
 }
 
 static void SvcRun(){
-    SERVICE_TABLE_ENTRY DispatchTable[] = 
-        { 
-            { SVCNAME, (LPSERVICE_MAIN_FUNCTION) SvcMain }, 
+    SERVICE_TABLE_ENTRY DispatchTable[] =
+        {
+            { SVCNAME, (LPSERVICE_MAIN_FUNCTION) SvcMain },
             { NULL, NULL } //End of table mark
-        }; 
- 
-    // This call returns when the service has stopped. 
+        };
+
+    // This call returns when the service has stopped.
     // The process should simply terminate when the call returns.
     StartServiceCtrlDispatcher(DispatchTable);
 }
+
+//INSTALL/UNINSTALL & UI CODE
 
 static bool ask(USHORT* question){
     return IDYES == MessageBoxW(NULL, question, SVCNAME, MB_YESNO | MB_ICONQUESTION);
@@ -181,26 +167,26 @@ static void install_service_and_start(USHORT* processFullPath){
 
     USHORT szPath[MAX_PATH + 100];
     SecureZeroMemory(szPath, sizeof(szPath));
-    
+
     wsprintfW(szPath, L"\"%s\" -w", processFullPath);
 
-    SC_HANDLE schService = CreateServiceW( 
-        schSCManager,              // SCM database 
-        SVCNAME,                   // name of service 
-        SVCNAME,                   // service name to display 
-        SERVICE_ALL_ACCESS,        // desired access 
-        SERVICE_WIN32_OWN_PROCESS, // service type 
+    SC_HANDLE schService = CreateServiceW(
+        schSCManager,              // SCM database
+        SVCNAME,                   // name of service
+        SVCNAME,                   // service name to display
+        SERVICE_ALL_ACCESS,        // desired access
+        SERVICE_WIN32_OWN_PROCESS, // service type
         SERVICE_AUTO_START,      // Autostart with OS
-        SERVICE_ERROR_IGNORE,      // error control type 
-        szPath,                    // path to service's binary 
-        NULL,                      // no load ordering group 
-        NULL,                      // no tag identifier 
-        NULL,                      // no dependencies 
-        NULL,                      // LocalSystem account 
-        NULL);                     // no password 
- 
+        SERVICE_ERROR_IGNORE,      // error control type
+        szPath,                    // path to service's binary
+        NULL,                      // no load ordering group
+        NULL,                      // no tag identifier
+        NULL,                      // no dependencies
+        NULL,                      // LocalSystem account
+        NULL);                     // no password
+
     if (schService == NULL){
-        error(L"CreateService failed."); 
+        error(L"CreateService failed.");
         CloseServiceHandle(schSCManager);
         return;
     }
@@ -220,27 +206,27 @@ static void install_service_and_start(USHORT* processFullPath){
             }else{
                 inform(L"Service started\n");
             }
-        } 
+        }
     }
 
-    CloseServiceHandle(schService); 
+    CloseServiceHandle(schService);
     CloseServiceHandle(schSCManager);
 }
 
 static void stop_service_and_delete(){
     SC_HANDLE schSCManager = OpenSCM();
 
-    if (NULL == schSCManager) 
+    if (NULL == schSCManager)
     {
         error(L"OpenSCManager failed. Please, check, that you are running this under Administrator account.\n");
         return;
     }
 
     SC_HANDLE schService = OpenService (schSCManager, SVCNAME, SERVICE_STOP | DELETE);
- 
+
     if (schService == NULL)
-    { 
-        error(L"OpenService failed. Please, check, that you are running this under Administrator account.\n"); 
+    {
+        error(L"OpenService failed. Please, check, that you are running this under Administrator account.\n");
         CloseServiceHandle(schSCManager);
         return;
     }
@@ -251,15 +237,15 @@ static void stop_service_and_delete(){
 
     // Delete the service.
     if (!DeleteService(schService)){
-        error(L"DeleteService failed\n"); 
+        error(L"DeleteService failed\n");
     }else{
-        inform(L"Service stopped and deleted successfully\n"); 
+        inform(L"Service stopped and deleted successfully\n");
     }
-    CloseServiceHandle(schService); 
+    CloseServiceHandle(schService);
     CloseServiceHandle(schSCManager);
 }
 
-void entry_point(){ //ENTRY POINT
+static void run(){
     USHORT processFullPath [MAX_PATH + 2];
     SecureZeroMemory(processFullPath, sizeof(processFullPath));
     DWORD processFullPathLength = GetModuleFileNameW(NULL, (USHORT*)&processFullPath, MAX_PATH + 1);
@@ -267,7 +253,7 @@ void entry_point(){ //ENTRY POINT
         error(L"Failed to determine process full path.");
         return;
     }
-    
+
     USHORT* commandLine = GetCommandLineW();
     LPWSTR* szArglist = NULL;
     int nArgs = 0;
@@ -329,6 +315,11 @@ void entry_point(){ //ENTRY POINT
     }
 
     error(L"Too many arguments!");
-    
+
     LocalFree(szArglist);
+}
+
+void entry_point(){ //ENTRY POINT
+    run();
+    ExitProcess(0);
 }
