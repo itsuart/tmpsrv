@@ -121,13 +121,6 @@ static void WINAPI SvcMain (DWORD dwArgc, LPTSTR *lpszArgv){
     ReportSvcStatus( SERVICE_STOPPED, NO_ERROR, 0 );
 }
 
-static SC_HANDLE OpenSCM(){
-    return OpenSCManager(
-        NULL,                    // local computer
-        NULL,                    // ServicesActive database
-        SC_MANAGER_ALL_ACCESS);  // full access rights
-}
-
 static void SvcRun(){
     SERVICE_TABLE_ENTRY DispatchTable[] =
         {
@@ -159,7 +152,7 @@ static void warn(USHORT* message){
 }
 
 static void install_service_and_start(USHORT* processFullPath){
-    SC_HANDLE schSCManager = OpenSCM();
+    SC_HANDLE schSCManager = OpenSCManager(NULL, NULL, SC_MANAGER_ALL_ACCESS);
     if (NULL == schSCManager){
         error(L"OpenSCManager failed\n");
         return;
@@ -214,7 +207,7 @@ static void install_service_and_start(USHORT* processFullPath){
 }
 
 static void stop_service_and_delete(){
-    SC_HANDLE schSCManager = OpenSCM();
+    SC_HANDLE schSCManager = OpenSCManager(NULL, NULL, SC_MANAGER_ALL_ACCESS);
 
     if (NULL == schSCManager)
     {
