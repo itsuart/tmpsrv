@@ -28,7 +28,7 @@ namespace TmpCleaningService {
         }
 
         DWORD nLoggedInUsers = 0;
-        for (int i = 0; i < nSessionInfos; ++i) {
+        for (DWORD i = 0; i < nSessionInfos; ++i) {
             if ((sessionInfos + i)->pUserName != nullptr) {
                 nLoggedInUsers += 1;
             }
@@ -165,8 +165,6 @@ namespace TmpCleaningService {
             void Run() noexcept {
                 if (!IsProperlyInitialized()) return;
                 const DWORD retCode = WaitForSingleObject(m_stopEvent, INFINITE);
-
-
 
                 switch (retCode) {
                     case WAIT_OBJECT_0: {

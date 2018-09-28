@@ -188,9 +188,11 @@ static void run() {
         else if (lstrcmpiW(arg, L"-u") == 0) {
             UninstallService();
         }
+        /*
         else if (lstrcmpiW(arg, L"-a") == 0) {
-            //auto usercount = TmpCleaningService::CountLoggedInUsers();
+            auto usercount = TmpCleaningService::CountLoggedInUsers();
         }
+        */
         else {
             error(L"Invalid argument. Use '-i' to install the service and '-u' to uninstall it.");
         }
