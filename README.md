@@ -1,28 +1,18 @@
 ## What is it?
 
-Simple Windows Service, that will clean c:\tmp folder upon system shutdown and startup. Like /tmp on Mac OS X and Linux systems.
+Simple Windows Service for Windows 7+, that cleans c:\tmp folder content on system shutdown and reboot. Putting system into sleep, starting or stopping the service will leave the content intact.
+
+## Are there pre-built binaries?
+Yes. See Releases tab: https://github.com/itsuart/tmpsrv/releases
 
 ## How to use?
 
-1. Put executable ('tmpsrv.exe') somewhere (for example in 'c:\tools\').
+1. Extract the executable (TmpCleaningService64.exe for 64bit OSes, TmpCleaningService64.exe for 32bit ones) somewhere (for example in 'c:\tools\').
 2. Start it (doubleclick) to install or uninstall the service.
 
 ## How to build?
 
-This is a bit complicated:
-
-1. Go to http://mingw-w64.org/ , download and install MinGW.
-2. Navigate to the directory where you put sources of the service.
-3. Run build32.cmd or build64.cmd to build 32 and 64 bit executables respectfully (you wil need MinGW distribution of proper bitness).
-
-Also, you might try VisualC++, but you will most likely need to update the code a little, since VC++ doesn't support (at the time of the writing) C99.
-
-## Are there pre-built binaries?
-Yes. 
-
-32bit: https://dl.dropboxusercontent.com/u/2858326/software/tmpsrv/tmpsrv32.exe
-
-64bit: https://dl.dropboxusercontent.com/u/2858326/software/tmpsrv/tmpsrv64.exe
+Visual Studio 17 should build this project without any problem.
 
 ## License?
 MIT. File LICENSE contains a copy.
