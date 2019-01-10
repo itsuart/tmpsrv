@@ -7,7 +7,7 @@ Yes. See Releases tab: https://github.com/itsuart/tmpsrv/releases
 
 ## How to use?
 
-1. Extract the executable (TmpCleaningService64.exe for 64bit OSes, TmpCleaningService64.exe for 32bit ones) somewhere (for example in 'c:\tools\').
+1. Extract the executable somewhere (for example in 'c:\tools\').
 2. Start it (doubleclick) to install or uninstall the service.
 
 ## How to build?
