@@ -81,6 +81,8 @@ namespace TmpCleaningService {
                     subFolders.push_back(currentItemFullPath);
                 }
                 else {
+                    //reset the attributes, so that read-only files will also be deleted
+                    SetFileAttributesW(currentItemFullPath.c_str(), FILE_ATTRIBUTE_NORMAL);
                     DeleteFileW(currentItemFullPath.c_str()); // we do ignore failures
                 }
 
